@@ -9,7 +9,7 @@ PhaserMMORPG.Game.prototype = {
 
   },
   create: function() {
-    
+    that = this;
     this.map = this.game.add.tilemap(this.levelName);
 
     //the first parameter is the tileset name as specified in Tiled, the second is the key to the asset
@@ -20,20 +20,28 @@ PhaserMMORPG.Game.prototype = {
     this.blockedLayer = this.map.createLayer('blockedLayer');
 
     //collision on blockedLayer
-    this.map.setCollisionBetween(1, 2000, true, 'blockedLayer');
+    this.map.setCollisionBetween(1, 100, true, 'blockedLayer');
 
     //resizes the game world to match the layer dimensions
     this.backgroundlayer.resizeWorld();
 
     this.createItems();
-    this.createDoors();    
+    //this.createDoors();    
 
-    //create player
+    this.coinPickupSound = this.game.add.audio('coins',1,true);
+
+    //find player start position
     //var result = this.findObjectsByType('playerStart', this.map, 'objectsLayer')
     //this.player = this.game.add.sprite(result[0].x, result[0].y, 'player');
     
 
-    this.player = new Avatar(this.game, 'Player1');
+    this.player = new PhaserMMORPG.Avatar(this.game, 'You');
+
+    PhaserMMORPG.myAvatar = this.player;
+
+    //spawn other players
+    PhaserMMORPG.eurecaServer.spawnOtherPlayers();
+
 
     //this.player.body.collideWorldBounds = true;
     //console.log(this.player);
@@ -42,12 +50,17 @@ PhaserMMORPG.Game.prototype = {
 
 
     //the camera will follow the player in the world
-    this.game.camera.follow(this.player);
+    this.game.camera.follow(this.player.player);
 
-    //move player with cursor keys
+    //set up cursor keys
     this.cursors = this.game.input.keyboard.createCursorKeys();
-    this.escapeKey = this.game.input.keyboard.addKey(Phaser.Keyboard.ESC);
+    this.cursors.runKey = this.game.input.keyboard.addKey(PhaserMMORPG.settings.keyboard.runKey);
 
+     
+    //listen to key releases
+    this.game.input.keyboard.addCallbacks(null, null, this.onKeyUpCallback);
+  
+  
   },
   createItems: function() {
     //create items
@@ -59,16 +72,6 @@ PhaserMMORPG.Game.prototype = {
       this.createFromTiledObject(element, this.items);
     }, this);
   },
-  createDoors: function() {
-    //create doors
-    this.doors = this.game.add.group();
-    this.doors.enableBody = true;
-    result = this.findObjectsByType('door', this.map, 'objectsLayer');
-
-    result.forEach(function(element){
-      this.createFromTiledObject(element, this.doors);
-    }, this);
-  },
 
   //find objects in a Tiled layer that containt a property called "type" equal to a certain value
   findObjectsByType: function(type, map, layer) {
@@ -78,7 +81,9 @@ PhaserMMORPG.Game.prototype = {
         //Phaser uses top left, Tiled bottom left so we have to adjust
         //also keep in mind that the cup images are a bit smaller than the tile which is 16x16
         //so they might not be placed in the exact position as in Tiled
-        element.y -= map.tileHeight;
+        element.y -= map.tileHeight - 15;
+        element.x -= 15;
+        
         result.push(element);
       }      
     });
@@ -95,92 +100,43 @@ PhaserMMORPG.Game.prototype = {
   },
   update: function() {
     //collision
-    this.game.physics.arcade.collide(this.player, this.blockedLayer);
-    this.game.physics.arcade.overlap(this.player, this.items, this.collect, null, this);
-    this.game.physics.arcade.overlap(this.player, this.doors, this.enterDoor, null, this);
+    this.game.physics.arcade.collide(this.player.player, this.blockedLayer);
+    this.game.physics.arcade.overlap(this.player.player, this.items, this.collect, null, this);
 
     //player movement
-    this.player.body.velocity.y = 0;
-    this.player.body.velocity.x = 0;
+    
+    this.player.stopVelocity();
 
     if(this.cursors.up.isDown) {
-      this.player.body.velocity.y -= 500;
-      this.player.play('up');
+      this.cursors.runKey.isDown? this.player.runUp() : this.player.walkUp();
+    } else if (this.cursors.down.isDown) {
+      this.cursors.runKey.isDown? this.player.runDown() : this.player.walkDown();
     }
-    else if(this.cursors.down.isDown) {
-      this.player.body.velocity.y += 500;
-      this.player.play('down');
-    }
-    if(this.cursors.left.isDown) {
-      this.player.body.velocity.x -= 500;
-      this.player.play('left');
-    }
-    else if(this.cursors.right.isDown) {
-      this.player.body.velocity.x += 500;
-      this.player.play('right');
-    } else {
-      this.player.animations.stop();
-    }
+    
+    if (this.cursors.left.isDown) {
+      this.cursors.runKey.isDown? this.player.runLeft() : this.player.walkLeft();
+    } else if(this.cursors.right.isDown) {
+      this.cursors.runKey.isDown? this.player.runRight() : this.player.walkRight();
+    } 
 
-
-    if (this.escapeKey.isDown) {
-        this.state.start('MainMenu');
-    }
 
   },
+  
+  onKeyUpCallback: function (event) {
+  var keyCode = event.which;
+  
+  if (keyCode === Phaser.Keyboard.UP ||
+    keyCode === Phaser.Keyboard.DOWN ||
+    keyCode === Phaser.Keyboard.LEFT ||
+    keyCode === Phaser.Keyboard.RIGHT) {
+    that.player.stopMovement();
+  }
+  
+  },
   collect: function(player, collectable) {
-    console.log('yummy!');
-
+    console.log('Yeey muney!');
+    this.coinPickupSound.play('',0,1,false);
     //remove sprite
     collectable.destroy();
   },
-  enterDoor: function(player, door) {
-    console.log('entering door that will take you to '+door.targetTilemap+' on x:'+door.targetX+' and y:'+door.targetY);
-  },
 };
-
-
-
-function Avatar(game, name, initialX, initialY) {
-  
-  name = name || 'Player name';
-  initialX = initialX || 84;
-  initialY = initialY || 48;
-
-//this.avatar = game.add.group();
-
-  //  Player
-  this.player = game.add.sprite(initialX, initialY, 'playerDude', 1);
-  
-  var tints = [0xf000f0, 0xff00ff, 0x00ffff, 0x00ff00, 0xff5500, 0x0055ff, 0x55ff00];
-  
-  this.player.tint = tints[Math.floor(Math.random() * tints.length)];
-  
-  this.player.anchor.set(0.5, 0.5);
-
-  this.player.animations.add('left', [0, 1, 2, 3], 10, true);
-  this.player.animations.add('right', [5, 6, 7, 8], 10, true);
-  this.player.animations.add('up', [4], 10, true);
-  this.player.animations.add('down', [4], 10, true);
-
-  game.physics.enable(this.player, Phaser.Physics.ARCADE);
-
-
-  //player name text
-  this.playerName = game.add.text(0, -30, name, { font: '10px Arial', fill: '#444444', align: 'center' }); 
-  this.playerName.anchor.setTo(0.5);
-  
-  
-    //player.body.setSize(100, 140, 2, 1);
-  this.player.body.collideWorldBounds = true;
-  this.player.body.setSize(10, 20, 0, 0);
-  
-  
-  //this.avatar.add(this.player);
-  //this.avatar.add(this.playerName);
-  
-  this.player.addChild(this.playerName);
-  
-  return this.player;
-
-}

@@ -12,7 +12,7 @@ var clients = {};
 var EurecaServer = require('eureca.io').EurecaServer;
 
 //create an instance of EurecaServer
-var eurecaServer = new EurecaServer({allow:['setId', 'spawnEnemy', 'kill', 'updateState']});
+var eurecaServer = new EurecaServer({allow:['setId', 'spawnAnotherPlayer', 'kill', 'updateState']});
 
 //attach eureca.io to our http server
 eurecaServer.attach(server);
@@ -30,7 +30,7 @@ eurecaServer.onConnect(function (conn) {
     var remote = eurecaServer.getClient(conn.id);    
 	
 	//register the client
-	clients[conn.id] = {id:conn.id, remote:remote}
+	clients[conn.id] = {id:conn.id, remote:remote, ip: conn.remoteAddress}
 	
 	//here we call setId (defined in the client side)
 	remote.setId(conn.id);	
@@ -65,7 +65,26 @@ eurecaServer.exports.handshake = function()
 			var x = clients[cc].laststate ? clients[cc].laststate.x:  0;
 			var y = clients[cc].laststate ? clients[cc].laststate.y:  0;
 
-			remote.spawnEnemy(clients[cc].id, x, y);		
+			//remote.spawnAnotherPlayer(clients[cc].id, x, y);		
+		}
+	}
+}
+
+
+eurecaServer.exports.spawnOtherPlayers = function()
+{
+	for (var c in clients)
+	{
+		var remote = clients[c].remote;
+		for (var cc in clients)
+		{		
+			
+			//send latest known position
+			var x = clients[cc].laststate ? clients[cc].laststate.x:  0;
+			var y = clients[cc].laststate ? clients[cc].laststate.y:  0;
+			var color = clients[cc].laststate ? clients[cc].laststate.playerColor:  null;
+
+			remote.spawnAnotherPlayer(clients[cc].id, x, y, color, clients[cc].ip.ip);		
 		}
 	}
 }
@@ -79,10 +98,12 @@ eurecaServer.exports.handleKeys = function (keys) {
 	for (var c in clients)
 	{
 		var remote = clients[c].remote;
+		
+		//console.log('updating '+ c +' with ' + keys);
 		remote.updateState(updatedClient.id, keys);
 		
 		//keep last known state so we can send it to new connected clients
 		clients[c].laststate = keys;
 	}
 }
-server.listen(process.env.PORT || 80);
+server.listen(process.env.PORT || 8000);
